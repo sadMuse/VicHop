@@ -1,98 +1,96 @@
-local player = game:GetService("Players").LocalPlayer
-local StarterGui = game:GetService("StarterGui")
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+
+local player = Players.LocalPlayer
 
 local function notify(t, x)
-    pcall(function() StarterGui:SetCore("SendNotification", {Title=t, Text=x, Duration=3}) end)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {Title = t, Text = x, Duration = 3})
+    end)
 end
 
 local function getHRP()
-    return player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    local char = player.Character or player.CharacterAdded:Wait()
+    return char:WaitForChild("HumanoidRootPart", 10)
 end
 
+-- Ищем свободный улей: Owner.Value == nil
 local function findFreeHive()
-    local honeycombs = workspace:FindFirstChild("Honeycombs")
+    local honeycombs = workspace:WaitForChild("Honeycombs", 10)
     if not honeycombs then return nil end
 
     for _, hive in ipairs(honeycombs:GetChildren()) do
-        -- Если у улья есть локальная стрелка, значит он свободен
-        local arrow = hive:FindFirstChild("localpatharrow")
-        if arrow then
-            -- Пытаемся достать позицию из стрелки
-            local targetPos = nil
-            
-            if arrow:IsA("Beam") and arrow.Attachment1 then
-                targetPos = arrow.Attachment1.WorldPosition
-            elseif arrow:IsA("Attachment") then
-                targetPos = arrow.WorldPosition
-            elseif arrow:IsA("BasePart") then
-                targetPos = arrow.Position
-            else
-                -- Если стрелка это не часть и не Beam, берем позицию самого улья
-                -- Ищем внутри улья что-то, что указывает на центр
-                local origin = hive:FindFirstChild("OriginPart") or hive.PrimaryPart
-                if origin then targetPos = origin.Position end
-            end
-
-            -- Если нашли координату, возвращаем её и имя улья
-            if targetPos then
-                return targetPos, hive.Name
-            end
+        local owner = hive:FindFirstChild("Owner")
+        local num = tonumber(hive.Name:match("%d+"))
+        if owner and owner.Value == nil and num then
+            return hive, num
         end
     end
     return nil
 end
 
-local function fly(pos)
+-- Позиция улья (SpawnPos, если есть, иначе центр модели)
+local function getHivePosition(hive)
+    local spawnPos = hive:FindFirstChild("SpawnPos")
+    if spawnPos and spawnPos:IsA("BasePart") then
+        return spawnPos.Position
+    end
+    return hive:GetPivot().Position
+end
+
+-- Полёт: вверх -> над ульем -> вниз (с постоянной скоростью)
+local function flyTo(targetPos)
     local hrp = getHRP()
     if not hrp then return end
-    
-    -- Ищем пушку
-    local b = nil
-    for _, v in ipairs(workspace:GetDescendants()) do
-        if v:IsA("BasePart") and (v.Name:lower():find("bazooka") or v.Name:lower():find("cannon") or v.Name:lower():find("pult")) then
-            b = v break
-        end
+
+    local speed = 120
+    local height = 60
+
+    local function tweenTo(pos)
+        local dist = (hrp.Position - pos).Magnitude
+        local tween = TweenService:Create(
+            hrp,
+            TweenInfo.new(math.max(dist / speed, 0.1), Enum.EasingStyle.Linear),
+            {CFrame = CFrame.new(pos)}
+        )
+        tween:Play()
+        tween.Completed:Wait()
     end
-    
-    notify("Flight", "🚀 Летим к улью...")
-    if b then
-        hrp.CFrame = b.CFrame + Vector3.new(0,5,0)
-        task.wait(0.5)
-        hrp.Velocity = (pos - hrp.Position).Unit * 180 + Vector3.new(0, 60, 0)
-    else
-        local bv = Instance.new("BodyVelocity")
-        bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        bv.Velocity = (pos - hrp.Position).Unit * 180 + Vector3.new(0, 60, 0)
-        bv.Parent = hrp
-        local t = tick()
-        while tick() - t < 3 do
-            task.wait(0.1)
-            if (hrp.Position - pos).Magnitude < 10 then break end
-            bv.Velocity = (pos - hrp.Position).Unit * 180 + Vector3.new(0, 60, 0)
-        end
-        bv:Destroy()
-    end
+
+    tweenTo(Vector3.new(hrp.Position.X, hrp.Position.Y + height, hrp.Position.Z))
+    tweenTo(Vector3.new(targetPos.X, targetPos.Y + height, targetPos.Z))
+    tweenTo(targetPos + Vector3.new(0, 4, 0))
 end
 
 task.spawn(function()
     task.wait(2)
-    
-    local pos, hiveName = findFreeHive()
-    
-    if pos then
-        notify("Scan", "✅ Найден свободный: " .. hiveName)
-        fly(pos)
-        task.wait(1.5)
-        
-        -- Отправляем клейм. Номер улья берём из имени (Hive1 = 1, Hive2 = 2)
-        local hiveIndex = tonumber(hiveName:match("%d+")) or 1
-        local ev = ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("ClaimHive")
-        if ev then
-            ev:FireServer(hiveIndex)
-            notify("Claim", "🔨 Клейм отправлен: " .. hiveIndex)
-        end
+
+    local events = ReplicatedStorage:WaitForChild("Events", 10)
+    local claim = events and events:FindFirstChild("ClaimHive")
+    if not claim then
+        notify("Ошибка", "ClaimHive не найден")
+        return
+    end
+
+    local hive, num = findFreeHive()
+    if not hive then
+        notify("Ошибка", "Свободных ульев нет")
+        return
+    end
+
+    notify("Улей", "Лечу к " .. hive.Name)
+    flyTo(getHivePosition(hive))
+    task.wait(0.5)
+
+    claim:FireServer(num)
+
+    task.wait(1)
+    local owner = hive:FindFirstChild("Owner")
+    if owner and owner.Value == player then
+        notify("Успех", "Улей " .. hive.Name .. " занят")
     else
-        notify("Scan", "⚠️ Свободных ульев нет.")
+        notify("Упс", "Не получилось занять " .. hive.Name)
     end
 end)
