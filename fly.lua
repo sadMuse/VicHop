@@ -5,7 +5,7 @@ local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
 
--- защита от двойного запуска (чтобы старая версия не мешала)
+-- защита от двойного запуска
 if _G.HiveFlyRunning then
     _G.HiveFlyStop = true
     task.wait(0.3)
@@ -46,14 +46,14 @@ local function getHivePosition(hive)
     return hive:GetPivot().Position
 end
 
--- Прямой полёт к точке, без подъёма, сквозь стены
+-- Прямой полёт к точке сквозь стены
 local function flyTo(targetPos)
     local hrp = getHRP()
     if not hrp then return end
     local char = hrp.Parent
 
-    local maxSpeed = 100   -- studs/сек
-    local accel = 0.15     -- плавность разгона (0..1)
+    local maxSpeed = 15    -- studs/сек
+    local accel = 0.15
     local dest = targetPos + Vector3.new(0, 4, 0)
 
     local noclip = RunService.Stepped:Connect(function()
@@ -82,7 +82,6 @@ local function flyTo(targetPos)
             return
         end
 
-        -- плавный разгон и торможение у цели
         local wanted = math.min(maxSpeed, dist * 3)
         currentSpeed = currentSpeed + (wanted - currentSpeed) * accel
 
@@ -120,8 +119,8 @@ task.spawn(function()
 
     notify("Улей", "Лечу к " .. hive.Name)
     flyTo(getHivePosition(hive))
-    task.wait(0.5)
 
+    -- сразу после прилёта
     claim:FireServer(num)
 
     task.wait(1)
