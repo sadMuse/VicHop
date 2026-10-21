@@ -480,15 +480,17 @@ local okMenu, menuErr = pcall(function()
     end
     _G.HiveMenuGui = menuGui
 
-    -- Палитра: тёмный мёд
-    local BG     = Color3.fromRGB(15, 14, 12)
-    local PANEL  = Color3.fromRGB(27, 25, 21)
-    local CARD   = Color3.fromRGB(36, 33, 27)
-    local ACCENT = Color3.fromRGB(255, 190, 60)
-    local ON_ACC = Color3.fromRGB(32, 22, 6)
-    local FG     = Color3.fromRGB(247, 240, 226)
-    local MUTED  = Color3.fromRGB(168, 160, 142)
-    local RED    = Color3.fromRGB(255, 95, 86)
+    -- Палитра: тёмный индиго с фиолетово-синим акцентом
+    local BG     = Color3.fromRGB(12, 13, 24)
+    local PANEL  = Color3.fromRGB(20, 22, 40)
+    local CARD   = Color3.fromRGB(29, 31, 56)
+    local ACCENT = Color3.fromRGB(139, 124, 255)
+    local ACCENT2 = Color3.fromRGB(86, 150, 255)
+    local ON_ACC = Color3.fromRGB(255, 255, 255)
+    local FG     = Color3.fromRGB(235, 237, 255)
+    local MUTED  = Color3.fromRGB(140, 146, 186)
+    local RED    = Color3.fromRGB(255, 95, 106)
+
 
     local function create(class, props, parent)
         local obj = Instance.new(class)
@@ -501,6 +503,13 @@ local okMenu, menuErr = pcall(function()
 
     local function corner(obj, radius)
         create("UICorner", {CornerRadius = UDim.new(0, radius)}, obj)
+    end
+
+    local function gradient(obj)
+        create("UIGradient", {
+            Color = ColorSequence.new(ACCENT, ACCENT2),
+            Rotation = 45
+        }, obj)
     end
 
     local function label(parent, text, size, position, dimensions, color, font, align)
@@ -570,12 +579,13 @@ local okMenu, menuErr = pcall(function()
 
     local modeText = RUN_MODE and "RUN" or "FLY"
     local chip = create("Frame", {
-        BackgroundColor3 = ACCENT,
+        BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         Size = UDim2.new(0, 64, 0, 22),
         Position = UDim2.new(1, -78, 0.5, -11)
     }, header)
     corner(chip, 11)
+    gradient(chip)
     label(chip, modeText, 11, UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 1, 0), ON_ACC,
         Enum.Font.GothamBold, Enum.TextXAlignment.Center)
 
@@ -583,20 +593,26 @@ local okMenu, menuErr = pcall(function()
     local tabs = create("Frame", {
         Name = "Tabs",
         Position = UDim2.new(0, 12, 0, 58),
-        Size = UDim2.new(1, -24, 0, 64),
-        BackgroundTransparency = 1
+        Size = UDim2.new(0, 150, 1, -70),
+        BackgroundColor3 = PANEL,
+        BorderSizePixel = 0
     }, window)
-    create("UIGridLayout", {
-        CellSize = UDim2.new(0, 91, 0, 29),
-        CellPadding = UDim2.new(0, 6, 0, 6),
+    corner(tabs, 12)
+    create("UIPadding", {
+        PaddingTop = UDim.new(0, 7),
+        PaddingLeft = UDim.new(0, 7),
+        PaddingRight = UDim.new(0, 7)
+    }, tabs)
+    create("UIListLayout", {
+        Padding = UDim.new(0, 4),
         SortOrder = Enum.SortOrder.LayoutOrder
     }, tabs)
 
     -- Область содержимого под вкладками
     local content = create("Frame", {
         Name = "Content",
-        Position = UDim2.new(0, 12, 0, 130),
-        Size = UDim2.new(1, -24, 1, -142),
+        Position = UDim2.new(0, 174, 0, 58),
+        Size = UDim2.new(1, -186, 1, -70),
         BackgroundColor3 = PANEL,
         BorderSizePixel = 0
     }, window)
@@ -736,7 +752,8 @@ local okMenu, menuErr = pcall(function()
         end
         for buttonName, button in pairs(navButtons) do
             local active = buttonName == name
-            button.BackgroundColor3 = active and ACCENT or PANEL
+            button.BackgroundColor3 = active and ACCENT or CARD
+            button.BackgroundTransparency = active and 0 or 0.45
             button.TextColor3 = active and ON_ACC or MUTED
         end
     end
@@ -747,16 +764,18 @@ local okMenu, menuErr = pcall(function()
     }) do
         local nav = create("TextButton", {
             Name = name .. "Tab",
-            Text = name,
+            Text = "   " .. name,
             Font = Enum.Font.GothamMedium,
             TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
             TextColor3 = MUTED,
             BackgroundColor3 = PANEL,
             BorderSizePixel = 0,
             AutoButtonColor = false,
+            Size = UDim2.new(1, 0, 0, 27),
             LayoutOrder = index
         }, tabs)
-        corner(nav, 9)
+        corner(nav, 8)
         navButtons[name] = nav
         addClick(nav, function() showPage(name) end)
 
@@ -835,7 +854,7 @@ local okMenu, menuErr = pcall(function()
         Font = Enum.Font.GothamBold,
         TextSize = 20,
         TextColor3 = ON_ACC,
-        BackgroundColor3 = ACCENT,
+        BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         AutoButtonColor = false,
         Size = UDim2.new(0, 48, 0, 48),
@@ -843,6 +862,7 @@ local okMenu, menuErr = pcall(function()
         ZIndex = 10
     }, menuGui)
     corner(toggle, 24)
+    gradient(toggle)
     create("UIStroke", {Color = Color3.new(1, 1, 1), Transparency = 0.7, Thickness = 1.5}, toggle)
 
     addClick(toggle, toggleMenu, toggle, nil)         -- клик = меню, перетаскивание = двигать кнопку
