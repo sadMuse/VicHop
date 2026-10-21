@@ -450,22 +450,45 @@ end
 if _G.HiveMenuGui then
     pcall(function() _G.HiveMenuGui:Destroy() end)
 end
+-- отключаем обработчики от предыдущего запуска
+if _G.HiveMenuConns then
+    for _, c in ipairs(_G.HiveMenuConns) do
+        pcall(function() c:Disconnect() end)
+    end
+end
+_G.HiveMenuConns = {}
+
+local function track(conn)
+    table.insert(_G.HiveMenuConns, conn)
+    return conn
+end
 
 local okMenu, menuErr = pcall(function()
     local menuGui = Instance.new("ScreenGui")
     menuGui.Name = "HiveMenu"
     menuGui.ResetOnSpawn = false
-    menuGui.IgnoreGuiInset = true
+    menuGui.IgnoreGuiInset = false -- координаты совпадают с координатами ввода
     menuGui.DisplayOrder = 1000
     menuGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    parentGui(menuGui)
+
+    -- PlayerGui первым: ввод там работает надёжнее всего
+    pcall(function()
+        menuGui.Parent = player:WaitForChild("PlayerGui", 5)
+    end)
+    if not menuGui.Parent then
+        parentGui(menuGui)
+    end
     _G.HiveMenuGui = menuGui
 
-    local BG = Color3.fromRGB(17, 18, 25)
-    local PANEL = Color3.fromRGB(24, 25, 35)
-    local ACCENT = Color3.fromRGB(155, 112, 255)
-    local FG = Color3.fromRGB(239, 239, 248)
-    local MUTED = Color3.fromRGB(151, 153, 173)
+    -- Палитра: тёмный мёд
+    local BG     = Color3.fromRGB(15, 14, 12)
+    local PANEL  = Color3.fromRGB(27, 25, 21)
+    local CARD   = Color3.fromRGB(36, 33, 27)
+    local ACCENT = Color3.fromRGB(255, 190, 60)
+    local ON_ACC = Color3.fromRGB(32, 22, 6)
+    local FG     = Color3.fromRGB(247, 240, 226)
+    local MUTED  = Color3.fromRGB(168, 160, 142)
+    local RED    = Color3.fromRGB(255, 95, 86)
 
     local function create(class, props, parent)
         local obj = Instance.new(class)
@@ -480,14 +503,14 @@ local okMenu, menuErr = pcall(function()
         create("UICorner", {CornerRadius = UDim.new(0, radius)}, obj)
     end
 
-    local function label(parent, text, size, position, dimensions, color)
+    local function label(parent, text, size, position, dimensions, color, font, align)
         return create("TextLabel", {
             BackgroundTransparency = 1,
             Text = text,
-            Font = Enum.Font.Gotham,
+            Font = font or Enum.Font.Gotham,
             TextSize = size,
             TextColor3 = color or FG,
-            TextXAlignment = Enum.TextXAlignment.Left,
+            TextXAlignment = align or Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Center,
             Position = position,
             Size = dimensions,
@@ -495,102 +518,187 @@ local okMenu, menuErr = pcall(function()
         }, parent)
     end
 
-    -- надёжный клик (мышь и тач), не зависит от Activated
-    local function onClick(btn, fn)
-        local down, startPos = false, nil
-        btn.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.Touch then
-                down = true
-                startPos = input.Position
-            end
-        end)
-        btn.InputEnded:Connect(function(input)
-            if down and (input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.Touch) then
-                down = false
-                if (input.Position - startPos).Magnitude < 10 then
-                    fn()
-                end
-            end
-        end)
-    end
-
+    ------------------------------------------------------------
+    -- Окно
+    ------------------------------------------------------------
     local window = create("Frame", {
         Name = "Window",
-        Size = UDim2.new(0, 660, 0, 410),
-        Position = UDim2.new(0.5, -330, 0.5, -205),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Size = UDim2.new(0, 600, 0, 420),
         BackgroundColor3 = BG,
         BorderSizePixel = 0,
         ClipsDescendants = true
     }, menuGui)
-    corner(window, 14)
+    corner(window, 16)
+    create("UIStroke", {Color = ACCENT, Transparency = 0.6, Thickness = 1.2}, window)
 
-    create("UIStroke", {
-        Color = ACCENT,
-        Transparency = 0.55,
-        Thickness = 1.2
-    }, window)
+    local uiScale = create("UIScale", {Scale = 1}, window)
+    local function updateScale()
+        local cam = workspace.CurrentCamera
+        if cam then
+            local vp = cam.ViewportSize
+            uiScale.Scale = math.clamp(math.min(vp.X / 640, vp.Y / 460), 0.5, 1)
+        end
+    end
+    updateScale()
+    pcall(function()
+        track(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale))
+    end)
 
+    -- Шапка: красная точка закрытия слева, название, режим справа
     local header = create("Frame", {
-        Size = UDim2.new(1, 0, 0, 54),
+        Name = "Header",
+        Size = UDim2.new(1, 0, 0, 48),
         BackgroundColor3 = PANEL,
         BorderSizePixel = 0
     }, window)
-    corner(header, 14)
-
-    label(header, "HIVE", 20, UDim2.new(0, 18, 0, 0), UDim2.new(0, 90, 1, 0), ACCENT)
-    label(header, "AUTOMATION PANEL", 10, UDim2.new(0, 84, 0, 2), UDim2.new(0, 200, 1, 0), MUTED)
 
     local close = create("TextButton", {
-        Text = "×",
-        Font = Enum.Font.GothamBold,
-        TextSize = 24,
-        TextColor3 = FG,
-        BackgroundColor3 = BG,
-        Size = UDim2.new(0, 36, 0, 34),
-        Position = UDim2.new(1, -45, 0, 10),
-        BorderSizePixel = 0
-    }, header)
-    corner(close, 9)
-
-    local sidebar = create("ScrollingFrame", {
-        Position = UDim2.new(0, 10, 0, 65),
-        Size = UDim2.new(0, 166, 1, -76),
-        BackgroundColor3 = PANEL,
+        Name = "Close",
+        Text = "",
+        AutoButtonColor = false,
+        BackgroundColor3 = RED,
         BorderSizePixel = 0,
-        ScrollBarThickness = 3,
-        ScrollBarImageColor3 = ACCENT,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y
-    }, window)
-    corner(sidebar, 10)
+        Size = UDim2.new(0, 22, 0, 22),
+        Position = UDim2.new(0, 14, 0.5, -11)
+    }, header)
+    corner(close, 11)
 
-    create("UIPadding", {
-        PaddingTop = UDim.new(0, 8),
-        PaddingLeft = UDim.new(0, 7),
-        PaddingRight = UDim.new(0, 7),
-        PaddingBottom = UDim.new(0, 8)
-    }, sidebar)
-
-    create("UIListLayout", {
-        Padding = UDim.new(0, 5),
-        SortOrder = Enum.SortOrder.LayoutOrder
-    }, sidebar)
-
-    local content = create("Frame", {
-        Position = UDim2.new(0, 188, 0, 65),
-        Size = UDim2.new(1, -198, 1, -76),
-        BackgroundColor3 = PANEL,
-        BorderSizePixel = 0
-    }, window)
-    corner(content, 10)
-
-    local pages = {}
-    local navButtons = {}
-    local liveLabels = {} -- {label, fn}: обновляются раз в секунду
+    label(header, "HIVE", 20, UDim2.new(0, 48, 0, 0), UDim2.new(0, 60, 1, 0), ACCENT, Enum.Font.GothamBold)
+    label(header, "AUTOMATION PANEL", 10, UDim2.new(0, 112, 0, 0), UDim2.new(0, 200, 1, 0), MUTED, Enum.Font.GothamMedium)
 
     local modeText = RUN_MODE and "RUN" or "FLY"
+    local chip = create("Frame", {
+        BackgroundColor3 = ACCENT,
+        BorderSizePixel = 0,
+        Size = UDim2.new(0, 64, 0, 22),
+        Position = UDim2.new(1, -78, 0.5, -11)
+    }, header)
+    corner(chip, 11)
+    label(chip, modeText, 11, UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 1, 0), ON_ACC,
+        Enum.Font.GothamBold, Enum.TextXAlignment.Center)
+
+    -- Вкладки сеткой сверху (6 в ряд, прокрутка не нужна)
+    local tabs = create("Frame", {
+        Name = "Tabs",
+        Position = UDim2.new(0, 12, 0, 58),
+        Size = UDim2.new(1, -24, 0, 64),
+        BackgroundTransparency = 1
+    }, window)
+    create("UIGridLayout", {
+        CellSize = UDim2.new(0, 91, 0, 29),
+        CellPadding = UDim2.new(0, 6, 0, 6),
+        SortOrder = Enum.SortOrder.LayoutOrder
+    }, tabs)
+
+    -- Область содержимого под вкладками
+    local content = create("Frame", {
+        Name = "Content",
+        Position = UDim2.new(0, 12, 0, 130),
+        Size = UDim2.new(1, -24, 1, -142),
+        BackgroundColor3 = PANEL,
+        BorderSizePixel = 0
+    }, window)
+    corner(content, 12)
+
+    ------------------------------------------------------------
+    -- Клики: события кнопки + прямая проверка координат ввода
+    ------------------------------------------------------------
+    local clickables = {}
+
+    local function visibleChain(obj)
+        while obj and obj ~= menuGui do
+            if obj:IsA("GuiObject") and not obj.Visible then return false end
+            obj = obj.Parent
+        end
+        return true
+    end
+
+    local function hit(gui, p)
+        local pos, size = gui.AbsolutePosition, gui.AbsoluteSize
+        return p.X >= pos.X and p.X <= pos.X + size.X
+            and p.Y >= pos.Y and p.Y <= pos.Y + size.Y
+    end
+
+    local function fire(c)
+        if c.moved then return end
+        if tick() - c.lastFire < 0.3 then return end
+        c.lastFire = tick()
+        if c.fn then pcall(c.fn) end
+    end
+
+    -- gui: элемент, fn: действие по клику, drag: что двигать при перетаскивании, scaleObj: UIScale цели
+    local function addClick(gui, fn, drag, scaleObj)
+        local c = {
+            gui = gui, fn = fn, drag = drag, scaleObj = scaleObj,
+            down = false, moved = false, lastFire = 0
+        }
+        table.insert(clickables, c)
+        if gui:IsA("GuiButton") then
+            track(gui.Activated:Connect(function() fire(c) end))
+        end
+        return c
+    end
+
+    local function isPress(input)
+        return input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch
+    end
+
+    track(UserInputService.InputBegan:Connect(function(input)
+        if not isPress(input) then return end
+        local p = Vector2.new(input.Position.X, input.Position.Y)
+        for _, c in ipairs(clickables) do
+            if visibleChain(c.gui) and hit(c.gui, p) then
+                c.down = true
+                c.moved = false
+                c.startPos = p
+                c.targetStart = c.drag and c.drag.Position
+            end
+        end
+    end))
+
+    track(UserInputService.InputChanged:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement
+            and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        local p = Vector2.new(input.Position.X, input.Position.Y)
+        for _, c in ipairs(clickables) do
+            if c.down and c.drag then
+                local delta = p - c.startPos
+                if delta.Magnitude > 8 then c.moved = true end
+                if c.moved then
+                    local s = c.scaleObj and c.scaleObj.Scale or 1
+                    local t = c.targetStart
+                    c.drag.Position = UDim2.new(
+                        t.X.Scale, t.X.Offset + delta.X / s,
+                        t.Y.Scale, t.Y.Offset + delta.Y / s
+                    )
+                end
+            end
+        end
+    end))
+
+    track(UserInputService.InputEnded:Connect(function(input)
+        if not isPress(input) then return end
+        local p = Vector2.new(input.Position.X, input.Position.Y)
+        for _, c in ipairs(clickables) do
+            if c.down then
+                c.down = false
+                if not c.moved and c.fn and hit(c.gui, p) then
+                    -- если событие кнопки не сработало, сработает этот запасной путь
+                    task.delay(0.12, function() fire(c) end)
+                end
+            end
+        end
+    end))
+
+    ------------------------------------------------------------
+    -- Страницы
+    ------------------------------------------------------------
+    local pages = {}
+    local navButtons = {}
+    local liveLabels = {}
 
     -- элемент = строка или функция, возвращающая строку (живое обновление)
     local sections = {
@@ -599,7 +707,7 @@ local okMenu, menuErr = pcall(function()
             function() return "Hive claim: " .. hiveStatus end,
             function() return "Target hive: " .. hiveTarget end,
             "Movement mode: " .. modeText,
-            "Use the floating H button to toggle this menu."
+            "Toggle menu: H button or RightShift."
         },
         Farming = {"Farming settings", "Farming controls are not connected yet."},
         Combat = {"Combat settings", "Combat controls are not connected yet."},
@@ -627,35 +735,34 @@ local okMenu, menuErr = pcall(function()
             page.Visible = pageName == name
         end
         for buttonName, button in pairs(navButtons) do
-            button.BackgroundColor3 = buttonName == name and ACCENT or BG
-            button.TextColor3 = buttonName == name and Color3.new(1, 1, 1) or MUTED
+            local active = buttonName == name
+            button.BackgroundColor3 = active and ACCENT or PANEL
+            button.TextColor3 = active and ON_ACC or MUTED
         end
     end
 
     for index, name in ipairs({
-        "Home", "Farming", "Combat", "Quests", "Planters",
-        "Toys", "RBC", "Webhook", "Tg Bot", "Config", "Debug"
+        "Home", "Farming", "Combat", "Quests", "Planters", "Toys",
+        "RBC", "Webhook", "Tg Bot", "Config", "Debug"
     }) do
         local nav = create("TextButton", {
-            Name = name .. "Button",
-            Text = "   " .. name,
+            Name = name .. "Tab",
+            Text = name,
             Font = Enum.Font.GothamMedium,
             TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left,
             TextColor3 = MUTED,
-            BackgroundColor3 = BG,
+            BackgroundColor3 = PANEL,
             BorderSizePixel = 0,
-            Size = UDim2.new(1, 0, 0, 30),
-            LayoutOrder = index,
-            AutoButtonColor = true
-        }, sidebar)
-        corner(nav, 7)
+            AutoButtonColor = false,
+            LayoutOrder = index
+        }, tabs)
+        corner(nav, 9)
         navButtons[name] = nav
+        addClick(nav, function() showPage(name) end)
 
         local page = create("ScrollingFrame", {
             Name = name .. "Page",
             Visible = false,
-            Position = UDim2.new(0, 0, 0, 0),
             Size = UDim2.new(1, 0, 1, 0),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
@@ -667,18 +774,17 @@ local okMenu, menuErr = pcall(function()
         pages[name] = page
 
         create("UIPadding", {
-            PaddingTop = UDim.new(0, 15),
-            PaddingLeft = UDim.new(0, 15),
-            PaddingRight = UDim.new(0, 15),
+            PaddingTop = UDim.new(0, 12),
+            PaddingLeft = UDim.new(0, 12),
+            PaddingRight = UDim.new(0, 12),
             PaddingBottom = UDim.new(0, 12)
         }, page)
-
         create("UIListLayout", {
-            Padding = UDim.new(0, 9),
+            Padding = UDim.new(0, 8),
             SortOrder = Enum.SortOrder.LayoutOrder
         }, page)
 
-        local title = label(page, name, 20, UDim2.new(), UDim2.new(1, 0, 0, 32), FG)
+        local title = label(page, name, 18, UDim2.new(), UDim2.new(1, 0, 0, 28), FG, Enum.Font.GothamBold)
         title.LayoutOrder = 0
 
         for itemIndex, item in ipairs(sections[name]) do
@@ -686,136 +792,68 @@ local okMenu, menuErr = pcall(function()
             local text = isFn and item() or item
 
             local card = create("Frame", {
-                BackgroundColor3 = BG,
+                BackgroundColor3 = CARD,
                 BorderSizePixel = 0,
-                Size = UDim2.new(1, 0, 0, 42),
+                Size = UDim2.new(1, 0, 0, 38),
                 LayoutOrder = itemIndex
             }, page)
-            corner(card, 8)
+            corner(card, 9)
 
-            local lbl = label(card, text, 11,
-                UDim2.new(0, 10, 0, 3),
-                UDim2.new(1, -20, 1, -6),
-                itemIndex == 1 and ACCENT or MUTED)
+            create("Frame", {
+                BackgroundColor3 = itemIndex == 1 and ACCENT or MUTED,
+                BackgroundTransparency = itemIndex == 1 and 0 or 0.6,
+                BorderSizePixel = 0,
+                Position = UDim2.new(0, 8, 0.5, -9),
+                Size = UDim2.new(0, 3, 0, 18)
+            }, card)
+
+            local lbl = label(card, text, 12,
+                UDim2.new(0, 20, 0, 0),
+                UDim2.new(1, -30, 1, 0),
+                itemIndex == 1 and ACCENT or FG,
+                itemIndex == 1 and Enum.Font.GothamBold or Enum.Font.Gotham)
 
             if isFn then
                 table.insert(liveLabels, {lbl, item})
             end
         end
-
-        onClick(nav, function()
-            showPage(name)
-        end)
     end
 
     showPage("Home")
 
-    local toggle = create("TextButton", {
-        Name = "MobileToggle",
-        Text = "H",
-        Font = Enum.Font.GothamBold,
-        TextSize = 20,
-        TextColor3 = Color3.new(1, 1, 1),
-        BackgroundColor3 = ACCENT,
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-        Size = UDim2.new(0, 52, 0, 52),
-        Position = UDim2.new(1, -72, 0.5, -26),
-        ZIndex = 10
-    }, menuGui)
-    corner(toggle, 26)
-
+    ------------------------------------------------------------
+    -- Закрытие, плавающая кнопка, перетаскивание
+    ------------------------------------------------------------
     local function toggleMenu()
         window.Visible = not window.Visible
     end
 
-    -- кнопка H: клик = открыть/закрыть, перетаскивание = двигать кнопку
-    local tDragging, tMoved = false, false
-    local tInput, tStart, tStartPos
+    -- кнопка у левого края экрана (не мешает джойстику справа)
+    local toggle = create("TextButton", {
+        Name = "MenuToggle",
+        Text = "H",
+        Font = Enum.Font.GothamBold,
+        TextSize = 20,
+        TextColor3 = ON_ACC,
+        BackgroundColor3 = ACCENT,
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+        Size = UDim2.new(0, 48, 0, 48),
+        Position = UDim2.new(0, 14, 0.5, -24),
+        ZIndex = 10
+    }, menuGui)
+    corner(toggle, 24)
+    create("UIStroke", {Color = Color3.new(1, 1, 1), Transparency = 0.7, Thickness = 1.5}, toggle)
 
-    toggle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            tDragging = true
-            tMoved = false
-            tInput = input
-            tStart = input.Position
-            tStartPos = toggle.Position
-        end
-    end)
+    addClick(toggle, toggleMenu, toggle, nil)         -- клик = меню, перетаскивание = двигать кнопку
+    addClick(close, function() window.Visible = false end)
+    addClick(header, nil, window, uiScale)            -- окно двигается за шапку
 
-    toggle.InputEnded:Connect(function(input)
-        if input == tInput then
-            tDragging = false
-            tInput = nil
-            if not tMoved then
-                toggleMenu()
-            end
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if not tDragging then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then
-            local delta = input.Position - tStart
-            if delta.Magnitude > 6 then
-                tMoved = true
-            end
-            if tMoved then
-                toggle.Position = UDim2.new(
-                    tStartPos.X.Scale, tStartPos.X.Offset + delta.X,
-                    tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y
-                )
-            end
-        end
-    end)
-
-    onClick(close, function()
-        window.Visible = false
-    end)
-
-    -- клавиша RightShift на ПК
-    UserInputService.InputBegan:Connect(function(input, processed)
+    track(UserInputService.InputBegan:Connect(function(input, processed)
         if not processed and input.KeyCode == Enum.KeyCode.RightShift then
             toggleMenu()
         end
-    end)
-
-    -- перетаскивание окна за шапку (мышь и тач)
-    local dragging = false
-    local dragInput, dragStart, startPosition
-
-    header.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPosition = window.Position
-            dragInput = input
-        end
-    end)
-
-    header.InputEnded:Connect(function(input)
-        if input == dragInput then
-            dragging = false
-            dragInput = nil
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if not dragging then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then
-            local delta = input.Position - dragStart
-            window.Position = UDim2.new(
-                startPosition.X.Scale,
-                startPosition.X.Offset + delta.X,
-                startPosition.Y.Scale,
-                startPosition.Y.Offset + delta.Y
-            )
-        end
-    end)
+    end))
 
     -- живое обновление статусных карточек
     task.spawn(function()
@@ -832,6 +870,7 @@ if okMenu then
     notify("Успех", "Hive Menu загружено", 3)
 else
     warn("[HiveMenu] Не удалось создать меню: " .. tostring(menuErr))
+    notify("Ошибка", "Меню не создалось, см. консоль (F9)", 4)
 end
 
 ------------------------------------------------------------
