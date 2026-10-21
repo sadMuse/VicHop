@@ -1,110 +1,101 @@
 -- ============================================================
--- Bee Swarm — Hive Visualizer (Beam Markers)
+-- Bee Swarm — Smooth Walk to Hive 1 & Claim
 -- ============================================================
-print("🐝 Hive Visualizer - Starting...")
+print("🐝 Walk & Claim Hive 1 - Starting...")
 
 local player = game:GetService("Players").LocalPlayer
-local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Папка для маркеров, чтобы их можно было легко удалить
-local markerFolder = Instance.new("Folder")
-markerFolder.Name = "HiveMarkers"
-markerFolder.Parent = workspace
-
--- Очистка старых маркеров, если скрипт запускали ранее
-local oldFolder = workspace:FindFirstChild("HiveMarkers")
-if oldFolder then oldFolder:Destroy() end
-
--- Цвета для лучей
-local COLORS = {
-    Color3.fromRGB(255, 0, 0),    -- Красный
-    Color3.fromRGB(0, 255, 0),    -- Зеленый
-    Color3.fromRGB(0, 150, 255),  -- Синий
-    Color3.fromRGB(255, 255, 0),  -- Желтый
-    Color3.fromRGB(255, 0, 255),  -- Фиолетовый
-    Color3.fromRGB(0, 255, 255)   -- Голубой
-}
-
-local function createBeamMarker(position, index, name)
-    -- 1. Создаем нижнюю точку (на самом улье)
-    local bottomPart = Instance.new("Part")
-    bottomPart.Name = "Bottom_" .. name
-    bottomPart.Size = Vector3.new(2, 2, 2)
-    bottomPart.Position = position
-    bottomPart.Anchored = true
-    bottomPart.CanCollide = false
-    bottomPart.Transparency = 0.5
-    bottomPart.Color = COLORS[(index % #COLORS) + 1]
-    bottomPart.Material = Enum.Material.Neon
-    bottomPart.Parent = markerFolder
-
-    -- 2. Создаем верхнюю точку (высоко в небе)
-    local topPart = Instance.new("Part")
-    topPart.Name = "Top_" .. name
-    topPart.Size = Vector3.new(0.5, 0.5, 0.5)
-    topPart.Position = position + Vector3.new(0, 150, 0)
-    topPart.Anchored = true
-    topPart.CanCollide = false
-    topPart.Transparency = 1
-    topPart.Parent = markerFolder
-
-    -- 3. Создаем точки крепления (Attachments) для луча
-    local attBottom = Instance.new("Attachment")
-    attBottom.Parent = bottomPart
-    
-    local attTop = Instance.new("Attachment")
-    attTop.Parent = topPart
-
-    -- 4. Создаем сам луч (Beam)
-    local beam = Instance.new("Beam")
-    beam.Attachment0 = attBottom
-    beam.Attachment1 = attTop
-    beam.Width0 = 1
-    beam.Width1 = 3
-    beam.FaceCamera = true
-    beam.Color = ColorSequence.new(COLORS[(index % #COLORS) + 1])
-    beam.LightEmission = 1
-    beam.Transparency = NumberSequence.new(0.2, 0.8) -- Прозрачность от низа к верху
-    beam.Parent = bottomPart
-
-    -- 5. Вешаем текст с номером улья
-    local billboard = Instance.new("BillboardGui")
-    billboard.Size = UDim2.new(0, 100, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 5, 0)
-    billboard.AlwaysOnTop = true
-    billboard.Parent = bottomPart
-
-    local text = Instance.new("TextLabel")
-    text.Size = UDim2.new(1, 0, 1, 0)
-    text.BackgroundTransparency = 1
-    text.Text = name
-    text.TextColor3 = COLORS[(index % #COLORS) + 1]
-    text.TextStrokeTransparency = 0
-    text.TextScaled = true
-    text.Font = Enum.Font.GothamBold
-    text.Parent = billboard
+local function notify(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 4 })
+    end)
 end
 
--- === Поиск ульев ===
-task.wait(2)
-print("🔍 Поиск ульев...")
+local function getHRP()
+    return player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+end
 
-local hiveDeco = workspace:FindFirstChild("HiveDeco")
-local canvases = hiveDeco and hiveDeco:FindFirstChild("StickerCanvases")
+local function getHumanoid()
+    return player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+end
 
-if canvases then
-    local count = 0
-    for _, canvas in ipairs(canvases:GetChildren()) do
-        local origin = canvas:FindFirstChild("OriginPart")
-        if origin then
-            count = count + 1
-            print("✅ Найден улей:", canvas.Name, "| Позиция:", origin.Position)
-            createBeamMarker(origin.Position, count, canvas.Name)
+local function waitForCharacter()
+    if not player.Character then player.CharacterAdded:Wait() end
+    local char = player.Character
+    char:WaitForChild("HumanoidRootPart", 15)
+    char:WaitForChild("Humanoid", 15)
+    task.wait(1)
+end
+
+-- === Идём к улью ===
+local function walkToHive(hiveIndex)
+    local hrp = getHRP()
+    local hum = getHumanoid()
+    if not hrp or not hum then return false end
+
+    local hiveDeco = workspace:FindFirstChild("HiveDeco")
+    local canvases = hiveDeco and hiveDeco:FindFirstChild("StickerCanvases")
+    local canvas = canvases and canvases:FindFirstChild("StickerCanvas" .. hiveIndex)
+    
+    if not canvas then 
+        notify("Walk", "❌ Улей " .. hiveIndex .. " не найден")
+        return false 
+    end
+    
+    local origin = canvas:FindFirstChild("OriginPart")
+    if not origin then return false end
+    
+    local targetPos = origin.Position
+    notify("Walk", "🚶 Идём к улью " .. hiveIndex .. "...")
+    
+    -- Плавная ходьба
+    local startTime = tick()
+    while tick() - startTime < 10 do -- Максимум 10 секунд идём
+        task.wait(0.1)
+        
+        -- Если умерли, прерываем
+        if not hum or hum.Health <= 0 then return false end
+        
+        -- Обновляем цель (на случай, если улей двигается)
+        hum:MoveTo(targetPos)
+        
+        -- Проверяем, дошли ли (дистанция меньше 5 стадов)
+        if (hrp.Position - targetPos).Magnitude < 5 then
+            notify("Walk", "✅ Дошли до улья " .. hiveIndex)
+            return true
         end
     end
-    print("📊 Всего ульев найдено:", count)
-else
-    warn("❌ Папка StickerCanvases не найдена!")
+    
+    notify("Walk", "⚠️ Не смогли дойти за 10 секунд.")
+    return false
 end
 
-print("🐝 Маркеры установлены. Посмотри в небо!")
+-- === Main ===
+task.spawn(function()
+    waitForCharacter()
+    
+    local targetHive = 1 -- Какой улей берем (1-6)
+    
+    -- Идем к улью
+    local success = walkToHive(targetHive)
+    
+    if success then
+        -- Ждем немного, чтобы прогрузилось
+        task.wait(1)
+        
+        -- Клеймим
+        local events = ReplicatedStorage:FindFirstChild("Events")
+        local claimEvent = events and events:FindFirstChild("ClaimHive")
+        
+        if claimEvent then
+            notify("Claim", "🔨 Отправляем клейм для улья " .. targetHive)
+            claimEvent:FireServer(targetHive)
+        else
+            notify("Error", "❌ ClaimHive не найден")
+        end
+    end
+end)
+
+print("🐝 Loaded!")
