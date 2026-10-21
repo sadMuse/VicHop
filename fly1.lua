@@ -495,6 +495,27 @@ local okMenu, menuErr = pcall(function()
         }, parent)
     end
 
+    -- надёжный клик (мышь и тач), не зависит от Activated
+    local function onClick(btn, fn)
+        local down, startPos = false, nil
+        btn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                down = true
+                startPos = input.Position
+            end
+        end)
+        btn.InputEnded:Connect(function(input)
+            if down and (input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch) then
+                down = false
+                if (input.Position - startPos).Magnitude < 10 then
+                    fn()
+                end
+            end
+        end)
+    end
+
     local window = create("Frame", {
         Name = "Window",
         Size = UDim2.new(0, 660, 0, 410),
@@ -682,7 +703,7 @@ local okMenu, menuErr = pcall(function()
             end
         end
 
-        nav.Activated:Connect(function()
+        onClick(nav, function()
             showPage(name)
         end)
     end
@@ -697,18 +718,68 @@ local okMenu, menuErr = pcall(function()
         TextColor3 = Color3.new(1, 1, 1),
         BackgroundColor3 = ACCENT,
         BorderSizePixel = 0,
+        AutoButtonColor = false,
         Size = UDim2.new(0, 52, 0, 52),
         Position = UDim2.new(1, -72, 0.5, -26),
-        Active = true,
-        Draggable = true
+        ZIndex = 10
     }, menuGui)
     corner(toggle, 26)
 
-    toggle.Activated:Connect(function()
+    local function toggleMenu()
         window.Visible = not window.Visible
+    end
+
+    -- кнопка H: клик = открыть/закрыть, перетаскивание = двигать кнопку
+    local tDragging, tMoved = false, false
+    local tInput, tStart, tStartPos
+
+    toggle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            tDragging = true
+            tMoved = false
+            tInput = input
+            tStart = input.Position
+            tStartPos = toggle.Position
+        end
     end)
-    close.Activated:Connect(function()
+
+    toggle.InputEnded:Connect(function(input)
+        if input == tInput then
+            tDragging = false
+            tInput = nil
+            if not tMoved then
+                toggleMenu()
+            end
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if not tDragging then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+            local delta = input.Position - tStart
+            if delta.Magnitude > 6 then
+                tMoved = true
+            end
+            if tMoved then
+                toggle.Position = UDim2.new(
+                    tStartPos.X.Scale, tStartPos.X.Offset + delta.X,
+                    tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y
+                )
+            end
+        end
+    end)
+
+    onClick(close, function()
         window.Visible = false
+    end)
+
+    -- клавиша RightShift на ПК
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if not processed and input.KeyCode == Enum.KeyCode.RightShift then
+            toggleMenu()
+        end
     end)
 
     -- перетаскивание окна за шапку (мышь и тач)
