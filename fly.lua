@@ -24,26 +24,34 @@ local function getHRP()
     return char:WaitForChild("HumanoidRootPart", 10)
 end
 
-local function findFreeHive()
-    local honeycombs = workspace:WaitForChild("Honeycombs", 10)
-    if not honeycombs then return nil end
-
-    for _, hive in ipairs(honeycombs:GetChildren()) do
-        local owner = hive:FindFirstChild("Owner")
-        local num = tonumber(hive.Name:match("%d+"))
-        if owner and owner.Value == nil and num then
-            return hive, num
-        end
-    end
-    return nil
-end
-
 local function getHivePosition(hive)
     local spawnPos = hive:FindFirstChild("SpawnPos")
     if spawnPos and spawnPos:IsA("BasePart") then
         return spawnPos.Position
     end
     return hive:GetPivot().Position
+end
+
+-- Ищем ближайший свободный улей
+local function findNearestFreeHive()
+    local hrp = getHRP()
+    local honeycombs = workspace:WaitForChild("Honeycombs", 10)
+    if not hrp or not honeycombs then return nil end
+
+    local bestHive, bestNum, bestDist = nil, nil, math.huge
+
+    for _, hive in ipairs(honeycombs:GetChildren()) do
+        local owner = hive:FindFirstChild("Owner")
+        local num = tonumber(hive.Name:match("%d+"))
+        if owner and owner.Value == nil and num then
+            local dist = (getHivePosition(hive) - hrp.Position).Magnitude
+            if dist < bestDist then
+                bestHive, bestNum, bestDist = hive, num, dist
+            end
+        end
+    end
+
+    return bestHive, bestNum
 end
 
 -- Прямой полёт к точке сквозь стены
@@ -110,7 +118,7 @@ task.spawn(function()
         return
     end
 
-    local hive, num = findFreeHive()
+    local hive, num = findNearestFreeHive()
     if not hive then
         notify("Ошибка", "Свободных ульев нет")
         _G.HiveFlyRunning = false
@@ -120,7 +128,6 @@ task.spawn(function()
     notify("Улей", "Лечу к " .. hive.Name)
     flyTo(getHivePosition(hive))
 
-    -- сразу после прилёта
     claim:FireServer(num)
 
     task.wait(1)
