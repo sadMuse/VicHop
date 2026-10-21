@@ -5,6 +5,11 @@ local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
 
+-- режим: _G.HiveRun = true -> бег, иначе полёт
+local RUN_MODE = (_G.HiveRun == true)
+local RUN_SPEED = 50   -- скорость бега (WalkSpeed)
+local FLY_SPEED = 150  -- скорость полёта (studs/сек)
+
 -- защита от двойного запуска
 if _G.HiveFlyRunning then
     _G.HiveFlyStop = true
@@ -36,7 +41,6 @@ local function getHivePosition(hive)
         end
     end
 
-    -- запасные варианты
     local spawnPos = hive:FindFirstChild("SpawnPos")
     if spawnPos and spawnPos:IsA("BasePart") then
         return spawnPos.Position
@@ -72,7 +76,6 @@ local function flyTo(targetPos)
     if not hrp then return end
     local char = hrp.Parent
 
-    local maxSpeed = 150   -- studs/сек
     local accel = 0.15
     local dest = targetPos + Vector3.new(0, 3, 0)
 
@@ -102,7 +105,7 @@ local function flyTo(targetPos)
             return
         end
 
-        local wanted = math.min(maxSpeed, dist * 5)
+        local wanted = math.min(FLY_SPEED, dist * 5)
         currentSpeed = currentSpeed + (wanted - currentSpeed) * accel
 
         local step = math.min(currentSpeed * dt, dist)
@@ -114,7 +117,6 @@ local function flyTo(targetPos)
         task.wait()
     end
 
-    -- точно ставим в центр
     if hrp.Parent then
         hrp.CFrame = CFrame.new(dest)
     end
@@ -122,6 +124,44 @@ local function flyTo(targetPos)
     conn:Disconnect()
     noclip:Disconnect()
     hrp.AssemblyLinearVelocity = Vector3.zero
+end
+
+-- Бег к точке (обычная ходьба по земле)
+local function runTo(targetPos)
+    local hrp = getHRP()
+    if not hrp then return end
+    local hum = hrp.Parent:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    local oldSpeed = hum.WalkSpeed
+    hum.WalkSpeed = RUN_SPEED
+
+    local started = tick()
+    local lastPos = hrp.Position
+    local lastCheck = tick()
+
+    while not _G.HiveFlyStop and hrp.Parent do
+        local flat = Vector3.new(targetPos.X - hrp.Position.X, 0, targetPos.Z - hrp.Position.Z)
+        if flat.Magnitude < 3 then break end
+
+        hum:MoveTo(targetPos)
+
+        -- если застрял, прыгаем
+        if tick() - lastCheck > 1 then
+            if (hrp.Position - lastPos).Magnitude < 2 then
+                hum.Jump = true
+            end
+            lastPos = hrp.Position
+            lastCheck = tick()
+        end
+
+        -- предохранитель, чтобы не бежать вечно
+        if tick() - started > 30 then break end
+
+        task.wait(0.1)
+    end
+
+    hum.WalkSpeed = oldSpeed
 end
 
 task.spawn(function()
@@ -142,8 +182,15 @@ task.spawn(function()
         return
     end
 
-    notify("Улей", "Лечу к " .. hive.Name)
-    flyTo(getHivePosition(hive))
+    local pos = getHivePosition(hive)
+
+    if RUN_MODE then
+        notify("Улей", "Бегу к " .. hive.Name)
+        runTo(pos)
+    else
+        notify("Улей", "Лечу к " .. hive.Name)
+        flyTo(pos)
+    end
 
     claim:FireServer(num)
 
