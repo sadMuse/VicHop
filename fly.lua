@@ -1,7 +1,7 @@
 -- ============================================================
--- Bee Swarm — Flight to Free Hive
+-- Bee Swarm — Flight to Free Hive (v2)
 -- ============================================================
-print("🐝 Flight to Hive - Starting...")
+print("🐝 Flight to Hive v2 - Starting...")
 
 local player = game:GetService("Players").LocalPlayer
 local StarterGui = game:GetService("StarterGui")
@@ -17,34 +17,31 @@ local function getHRP()
     return player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 end
 
--- === 1. Поиск свободного улья ===
+-- === 1. Улучшенный поиск свободного улья ===
 local function findFreeHive()
-    local hives = workspace:FindFirstChild("HiveDeco") and workspace.HiveDeco:FindFirstChild("Hives")
-    if not hives then
-        warn("HiveDeco.Hives not found")
-        return nil
-    end
+    -- Пушки и платформы ульев часто лежат в Workspace.Platforms или в корне
+    local platforms = workspace:FindFirstChild("Platforms")
+    local searchIn = platforms or workspace
     
-    for _, hive in ipairs(hives:GetChildren()) do
-        local isClaimed = false
-        -- Проверка по тексту (таблички Owned/Claimed)
-        for _, child in ipairs(hive:GetDescendants()) do
-            if child:IsA("TextLabel") and (child.Text:find("Claimed") or child.Text:find("Owned") or child.Text:find("Захвачен")) then
-                isClaimed = true
-                break
+    for _, obj in ipairs(searchIn:GetDescendants()) do
+        -- Ищем модели или части, в имени которых есть "Hive"
+        if (obj:IsA("Model") or obj:IsA("BasePart")) and obj.Name:find("Hive") then
+            
+            -- Проверяем, занят ли он. Ищем красный текст "Owned" или "Claimed" в потомках.
+            local isClaimed = false
+            for _, child in ipairs(obj:GetDescendants()) do
+                if child:IsA("TextLabel") and (child.TextColor3 == Color3.fromRGB(255, 0, 0) or child.Text:find("Own") or child.Text:find("Claim")) then
+                    isClaimed = true
+                    break
+                end
             end
-        end
-        
-        -- Если не нашли текстом, проверяем по имени/атрибутам (часто бывает, что улей занят, если у него есть какое-то свойство)
-        if not isClaimed and hive:GetAttribute("Claimed") == true then
-            isClaimed = true
-        end
-
-        if not isClaimed then
-            local origin = hive:FindFirstChild("OriginPart") or hive.PrimaryPart
-            if origin then 
-                print("✅ Found free hive:", hive.Name)
-                return origin 
+            
+            if not isClaimed then
+                local origin = obj:FindFirstChild("OriginPart") or obj.PrimaryPart or (obj:IsA("BasePart") and obj)
+                if origin then
+                    print("✅ Найден свободный улей:", obj.Name)
+                    return origin
+                end
             end
         end
     end
@@ -53,68 +50,64 @@ end
 
 -- === 2. Поиск пушки ===
 local function findCannon()
-    -- Ищем пушки в Workspace (Cannon, Launcher, Pult)
+    -- Расширяем поиск: ищем в Platforms, в корне и на 3 уровня вглубь
     for _, v in ipairs(workspace:GetDescendants()) do
         if v:IsA("BasePart") and (v.Name:find("Cannon") or v.Name:find("Launcher") or v.Name:find("Pult")) then
-            print("💥 Found cannon:", v.Name)
+            print("💥 Найдена пушка:", v.Name)
             return v
         end
     end
     return nil
 end
 
--- === 3. Полёт к улью ===
+-- === 3. Полёт ===
 local function flyToHive(targetPos)
     local hrp = getHRP()
-    local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
+    if not hrp then return end
 
     local cannon = findCannon()
     if cannon then
-        notify("Flight", "💥 Cannon found! Launching...")
+        notify("Flight", "💥 Пушка найдена! Летим...")
         hrp.CFrame = cannon.CFrame + Vector3.new(0, 5, 0)
         task.wait(0.5)
-        
-        -- Импульс от пушки
         local dir = (targetPos - hrp.Position).Unit
         hrp.Velocity = dir * 150 + Vector3.new(0, 50, 0) 
     else
-        notify("Flight", "⚠️ No cannon. Using BodyVelocity...")
-        -- Ручной полёт через BodyVelocity
+        notify("Flight", "🚀 Пушки нет. Используем BodyVelocity...")
+        
         local bv = Instance.new("BodyVelocity")
         bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
         bv.Velocity = (targetPos - hrp.Position).Unit * 150 + Vector3.new(0, 50, 0)
         bv.Parent = hrp
         
-        -- Ждем, пока не прилетим (или пока не пройдет время)
-        local startPos = hrp.Position
         local startTime = tick()
         while tick() - startTime < 3 do
             task.wait(0.1)
-            -- Если мы пролетели мимо, корректируем курс
-            if (hrp.Position - targetPos).Magnitude < 10 then break end
+            if (hrp.Position - targetPos).Magnitude < 15 then break end
+            -- Подруливаем на ходу
             bv.Velocity = (targetPos - hrp.Position).Unit * 150 + Vector3.new(0, 50, 0)
         end
-        
         bv:Destroy()
     end
 end
 
 -- === Main ===
-task.wait(2) -- ждем загрузки
+task.wait(2)
 
 local freeHive = findFreeHive()
 if freeHive then
-    notify("Flight", "🏠 Free hive found! Flying...")
+    notify("Flight", "🏠 Свободный улей найден! Летим...")
     flyToHive(freeHive.Position)
     task.wait(1)
     
-    -- По прилету пытаемся заклеймить (на всякий случай)
+    -- Пытаемся заклеймить (на всякий случай, так как улей был свободен)
     local events = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
     if events and events:FindFirstChild("ClaimHive") then
-        events.ClaimHive:FireServer(tonumber(freeHive.Name:match("%d+")) or 1)
+        events.ClaimHive:FireServer(tonumber(freeHive.Parent.Name:match("%d+")) or 1)
     end
 else
-    notify("Flight", "❌ No free hives found.")
-    warn("No free hives found.")
+    -- Если не нашли улей, ищем хоть что-то похожее на платформу
+    notify("Flight", "⚠️ Улей не найден. Летим к центру...")
+    flyToHive(Vector3.new(0, 50, 0))
+    warn("Свободные ульи не найдены.")
 end
