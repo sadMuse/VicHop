@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 
@@ -16,7 +17,6 @@ local function getHRP()
     return char:WaitForChild("HumanoidRootPart", 10)
 end
 
--- Ищем свободный улей: Owner.Value == nil
 local function findFreeHive()
     local honeycombs = workspace:WaitForChild("Honeycombs", 10)
     if not honeycombs then return nil end
@@ -31,7 +31,6 @@ local function findFreeHive()
     return nil
 end
 
--- Позиция улья (SpawnPos, если есть, иначе центр модели)
 local function getHivePosition(hive)
     local spawnPos = hive:FindFirstChild("SpawnPos")
     if spawnPos and spawnPos:IsA("BasePart") then
@@ -40,28 +39,38 @@ local function getHivePosition(hive)
     return hive:GetPivot().Position
 end
 
--- Полёт: вверх -> над ульем -> вниз (с постоянной скоростью)
+-- Плавный прямой полёт сквозь стены
 local function flyTo(targetPos)
     local hrp = getHRP()
     if not hrp then return end
+    local char = hrp.Parent
 
-    local speed = 120
-    local height = 60
+    local speed = 100 -- studs в секунду, меняй под себя
 
-    local function tweenTo(pos)
-        local dist = (hrp.Position - pos).Magnitude
-        local tween = TweenService:Create(
-            hrp,
-            TweenInfo.new(math.max(dist / speed, 0.1), Enum.EasingStyle.Linear),
-            {CFrame = CFrame.new(pos)}
-        )
-        tween:Play()
-        tween.Completed:Wait()
-    end
+    -- noclip на время полёта
+    local noclip = RunService.Stepped:Connect(function()
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end)
 
-    tweenTo(Vector3.new(hrp.Position.X, hrp.Position.Y + height, hrp.Position.Z))
-    tweenTo(Vector3.new(targetPos.X, targetPos.Y + height, targetPos.Z))
-    tweenTo(targetPos + Vector3.new(0, 4, 0))
+    hrp.Anchored = true -- чтобы гравитация не мешала
+
+    local dest = targetPos + Vector3.new(0, 4, 0)
+    local dist = (hrp.Position - dest).Magnitude
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(math.max(dist / speed, 0.1), Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+        {CFrame = CFrame.new(dest)}
+    )
+    tween:Play()
+    tween.Completed:Wait()
+
+    hrp.Anchored = false
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    noclip:Disconnect()
 end
 
 task.spawn(function()
