@@ -1,118 +1,110 @@
 -- ============================================================
--- Bee Swarm (Retro) — Flight to Dandelion Hives
+-- Bee Swarm — Hive Visualizer (Beam Markers)
 -- ============================================================
-print("🐝 Flight to Dandelion Hives - Starting...")
+print("🐝 Hive Visualizer - Starting...")
 
 local player = game:GetService("Players").LocalPlayer
-local StarterGui = game:GetService("StarterGui")
+local RunService = game:GetService("RunService")
 
-local function notify(title, text)
-    pcall(function()
-        StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 4 })
-    end)
-end
+-- Папка для маркеров, чтобы их можно было легко удалить
+local markerFolder = Instance.new("Folder")
+markerFolder.Name = "HiveMarkers"
+markerFolder.Parent = workspace
 
-local function getHRP()
-    return player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-end
+-- Очистка старых маркеров, если скрипт запускали ранее
+local oldFolder = workspace:FindFirstChild("HiveMarkers")
+if oldFolder then oldFolder:Destroy() end
 
--- === Поиск пушки ===
-local function findCannon()
-    for _, v in ipairs(workspace:GetDescendants()) do
-        if v:IsA("BasePart") and (v.Name:find("Cannon") or v.Name:find("Launcher") or v.Name:find("Pult")) then
-            return v
-        end
-    end
-    return nil
-end
+-- Цвета для лучей
+local COLORS = {
+    Color3.fromRGB(255, 0, 0),    -- Красный
+    Color3.fromRGB(0, 255, 0),    -- Зеленый
+    Color3.fromRGB(0, 150, 255),  -- Синий
+    Color3.fromRGB(255, 255, 0),  -- Желтый
+    Color3.fromRGB(255, 0, 255),  -- Фиолетовый
+    Color3.fromRGB(0, 255, 255)   -- Голубой
+}
 
--- === Полёт ===
-local function flyToPosition(targetPos)
-    local hrp = getHRP()
-    if not hrp then return end
+local function createBeamMarker(position, index, name)
+    -- 1. Создаем нижнюю точку (на самом улье)
+    local bottomPart = Instance.new("Part")
+    bottomPart.Name = "Bottom_" .. name
+    bottomPart.Size = Vector3.new(2, 2, 2)
+    bottomPart.Position = position
+    bottomPart.Anchored = true
+    bottomPart.CanCollide = false
+    bottomPart.Transparency = 0.5
+    bottomPart.Color = COLORS[(index % #COLORS) + 1]
+    bottomPart.Material = Enum.Material.Neon
+    bottomPart.Parent = markerFolder
 
-    local cannon = findCannon()
-    if cannon then
-        notify("Flight", "💥 Летим через пушку...")
-        hrp.CFrame = cannon.CFrame + Vector3.new(0, 5, 0)
-        task.wait(0.5)
-        local dir = (targetPos - hrp.Position).Unit
-        hrp.Velocity = dir * 150 + Vector3.new(0, 50, 0) 
-    else
-        notify("Flight", "🚀 Пушки нет. Используем BodyVelocity...")
-        local bv = Instance.new("BodyVelocity")
-        bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        bv.Velocity = (targetPos - hrp.Position).Unit * 150 + Vector3.new(0, 50, 0)
-        bv.Parent = hrp
-        
-        local startTime = tick()
-        while tick() - startTime < 3 do
-            task.wait(0.1)
-            if (hrp.Position - targetPos).Magnitude < 15 then break end
-            bv.Velocity = (targetPos - hrp.Position).Unit * 150 + Vector3.new(0, 50, 0)
-        end
-        bv:Destroy()
-    end
-end
+    -- 2. Создаем верхнюю точку (высоко в небе)
+    local topPart = Instance.new("Part")
+    topPart.Name = "Top_" .. name
+    topPart.Size = Vector3.new(0.5, 0.5, 0.5)
+    topPart.Position = position + Vector3.new(0, 150, 0)
+    topPart.Anchored = true
+    topPart.CanCollide = false
+    topPart.Transparency = 1
+    topPart.Parent = markerFolder
 
--- === Main ===
-task.wait(2)
-
--- 1. Ищем поле одуванчиков в Workspace
-local dandelionField = nil
-for _, obj in ipairs(workspace:GetDescendants()) do
-    if (obj:IsA("Model") or obj:IsA("BasePart")) and (obj.Name:lower():find("dandelion") or obj.Name:lower():find("white field")) then
-        dandelionField = obj
-        print("🌼 Найдено поле одуванчиков:", obj.Name)
-        break
-    end
-end
-
-local targetPos = nil
-
-if dandelionField then
-    -- 2. Если нашли поле, ищем ближайший к нему улей
-    local hiveDeco = workspace:FindFirstChild("HiveDeco")
-    local canvases = hiveDeco and hiveDeco:FindFirstChild("StickerCanvases")
+    -- 3. Создаем точки крепления (Attachments) для луча
+    local attBottom = Instance.new("Attachment")
+    attBottom.Parent = bottomPart
     
-    if canvases then
-        local closestDist = math.huge
-        local bestCanvas = nil
-        
-        local fieldPos = dandelionField:IsA("BasePart") and dandelionField.Position or dandelionField:GetModelCFrame().Position
-        
-        for _, canvas in ipairs(canvases:GetChildren()) do
-            local origin = canvas:FindFirstChild("OriginPart")
-            if origin then
-                local dist = (origin.Position - fieldPos).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
-                    bestCanvas = origin
-                end
-            end
-        end
-        
-        if bestCanvas then
-            targetPos = bestCanvas.Position
-            notify("Flight", "🏠 Улей возле одуванчиков найден!")
-            print("Координаты улья:", targetPos)
+    local attTop = Instance.new("Attachment")
+    attTop.Parent = topPart
+
+    -- 4. Создаем сам луч (Beam)
+    local beam = Instance.new("Beam")
+    beam.Attachment0 = attBottom
+    beam.Attachment1 = attTop
+    beam.Width0 = 1
+    beam.Width1 = 3
+    beam.FaceCamera = true
+    beam.Color = ColorSequence.new(COLORS[(index % #COLORS) + 1])
+    beam.LightEmission = 1
+    beam.Transparency = NumberSequence.new(0.2, 0.8) -- Прозрачность от низа к верху
+    beam.Parent = bottomPart
+
+    -- 5. Вешаем текст с номером улья
+    local billboard = Instance.new("BillboardGui")
+    billboard.Size = UDim2.new(0, 100, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 5, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = bottomPart
+
+    local text = Instance.new("TextLabel")
+    text.Size = UDim2.new(1, 0, 1, 0)
+    text.BackgroundTransparency = 1
+    text.Text = name
+    text.TextColor3 = COLORS[(index % #COLORS) + 1]
+    text.TextStrokeTransparency = 0
+    text.TextScaled = true
+    text.Font = Enum.Font.GothamBold
+    text.Parent = billboard
+end
+
+-- === Поиск ульев ===
+task.wait(2)
+print("🔍 Поиск ульев...")
+
+local hiveDeco = workspace:FindFirstChild("HiveDeco")
+local canvases = hiveDeco and hiveDeco:FindFirstChild("StickerCanvases")
+
+if canvases then
+    local count = 0
+    for _, canvas in ipairs(canvases:GetChildren()) do
+        local origin = canvas:FindFirstChild("OriginPart")
+        if origin then
+            count = count + 1
+            print("✅ Найден улей:", canvas.Name, "| Позиция:", origin.Position)
+            createBeamMarker(origin.Position, count, canvas.Name)
         end
     end
+    print("📊 Всего ульев найдено:", count)
+else
+    warn("❌ Папка StickerCanvases не найдена!")
 end
 
--- 3. Фолбэк: если поле не найдено, используем хардкод координат ульев в Retro Swarm
-if not targetPos then
-    notify("Flight", "⚠️ Поле не найдено, летим к известным координатам Retro Swarm...")
-    -- FILL: Если координаты не совпадут, поправь Vector3 тут
-    targetPos = Vector3.new(40, 10, -140) -- примерно там, где ульи у одуванчиков
-end
-
--- 4. Летим
-flyToPosition(targetPos)
-task.wait(1)
-
--- 5. Пытаемся заклеймить первый попавшийся
-local events = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
-if events and events:FindFirstChild("ClaimHive") then
-    events.ClaimHive:FireServer(1) 
-end
+print("🐝 Маркеры установлены. Посмотри в небо!")
