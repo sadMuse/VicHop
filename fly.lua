@@ -24,7 +24,19 @@ local function getHRP()
     return char:WaitForChild("HumanoidRootPart", 10)
 end
 
+-- Центр текстуры (localpatharrow) улья
 local function getHivePosition(hive)
+    local arrow = hive:FindFirstChild("localpatharrow")
+    if arrow then
+        if arrow:IsA("Model") then
+            local cf = arrow:GetBoundingBox()
+            return cf.Position
+        elseif arrow:IsA("BasePart") then
+            return arrow.Position
+        end
+    end
+
+    -- запасные варианты
     local spawnPos = hive:FindFirstChild("SpawnPos")
     if spawnPos and spawnPos:IsA("BasePart") then
         return spawnPos.Position
@@ -32,7 +44,7 @@ local function getHivePosition(hive)
     return hive:GetPivot().Position
 end
 
--- Ищем ближайший свободный улей
+-- Ближайший свободный улей
 local function findNearestFreeHive()
     local hrp = getHRP()
     local honeycombs = workspace:WaitForChild("Honeycombs", 10)
@@ -60,9 +72,9 @@ local function flyTo(targetPos)
     if not hrp then return end
     local char = hrp.Parent
 
-    local maxSpeed = 15    -- studs/сек
+    local maxSpeed = 150   -- studs/сек
     local accel = 0.15
-    local dest = targetPos + Vector3.new(0, 4, 0)
+    local dest = targetPos + Vector3.new(0, 3, 0)
 
     local noclip = RunService.Stepped:Connect(function()
         for _, part in ipairs(char:GetDescendants()) do
@@ -85,12 +97,12 @@ local function flyTo(targetPos)
         local diff = dest - hrp.Position
         local dist = diff.Magnitude
 
-        if dist < 1.5 then
+        if dist < 1 then
             done = true
             return
         end
 
-        local wanted = math.min(maxSpeed, dist * 3)
+        local wanted = math.min(maxSpeed, dist * 5)
         currentSpeed = currentSpeed + (wanted - currentSpeed) * accel
 
         local step = math.min(currentSpeed * dt, dist)
@@ -100,6 +112,11 @@ local function flyTo(targetPos)
 
     while not done do
         task.wait()
+    end
+
+    -- точно ставим в центр
+    if hrp.Parent then
+        hrp.CFrame = CFrame.new(dest)
     end
 
     conn:Disconnect()
