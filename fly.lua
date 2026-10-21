@@ -1,10 +1,17 @@
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
+
+-- защита от двойного запуска (чтобы старая версия не мешала)
+if _G.HiveFlyRunning then
+    _G.HiveFlyStop = true
+    task.wait(0.3)
+end
+_G.HiveFlyRunning = true
+_G.HiveFlyStop = false
 
 local function notify(t, x)
     pcall(function()
@@ -39,15 +46,16 @@ local function getHivePosition(hive)
     return hive:GetPivot().Position
 end
 
--- Плавный прямой полёт сквозь стены
+-- Прямой полёт к точке, без подъёма, сквозь стены
 local function flyTo(targetPos)
     local hrp = getHRP()
     if not hrp then return end
     local char = hrp.Parent
 
-    local speed = 100 -- studs в секунду, меняй под себя
+    local maxSpeed = 100   -- studs/сек
+    local accel = 0.15     -- плавность разгона (0..1)
+    local dest = targetPos + Vector3.new(0, 4, 0)
 
-    -- noclip на время полёта
     local noclip = RunService.Stepped:Connect(function()
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -56,21 +64,40 @@ local function flyTo(targetPos)
         end
     end)
 
-    hrp.Anchored = true -- чтобы гравитация не мешала
+    local currentSpeed = 0
+    local done = false
 
-    local dest = targetPos + Vector3.new(0, 4, 0)
-    local dist = (hrp.Position - dest).Magnitude
-    local tween = TweenService:Create(
-        hrp,
-        TweenInfo.new(math.max(dist / speed, 0.1), Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-        {CFrame = CFrame.new(dest)}
-    )
-    tween:Play()
-    tween.Completed:Wait()
+    local conn
+    conn = RunService.Heartbeat:Connect(function(dt)
+        if _G.HiveFlyStop or not hrp.Parent then
+            done = true
+            return
+        end
 
-    hrp.Anchored = false
-    hrp.AssemblyLinearVelocity = Vector3.zero
+        local diff = dest - hrp.Position
+        local dist = diff.Magnitude
+
+        if dist < 1.5 then
+            done = true
+            return
+        end
+
+        -- плавный разгон и торможение у цели
+        local wanted = math.min(maxSpeed, dist * 3)
+        currentSpeed = currentSpeed + (wanted - currentSpeed) * accel
+
+        local step = math.min(currentSpeed * dt, dist)
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.CFrame = CFrame.new(hrp.Position + diff.Unit * step)
+    end)
+
+    while not done do
+        task.wait()
+    end
+
+    conn:Disconnect()
     noclip:Disconnect()
+    hrp.AssemblyLinearVelocity = Vector3.zero
 end
 
 task.spawn(function()
@@ -80,12 +107,14 @@ task.spawn(function()
     local claim = events and events:FindFirstChild("ClaimHive")
     if not claim then
         notify("Ошибка", "ClaimHive не найден")
+        _G.HiveFlyRunning = false
         return
     end
 
     local hive, num = findFreeHive()
     if not hive then
         notify("Ошибка", "Свободных ульев нет")
+        _G.HiveFlyRunning = false
         return
     end
 
@@ -102,4 +131,6 @@ task.spawn(function()
     else
         notify("Упс", "Не получилось занять " .. hive.Name)
     end
+
+    _G.HiveFlyRunning = false
 end)
